@@ -64,14 +64,27 @@ share sheet and is not sent automatically.
 
 ## AI chat
 
-ChatWithMe uses the Supabase Edge Function in `supabase/functions/chatwithme/`
-to call OpenAI. It sends the user's typed chat and recent conversational
-context; it does not read or send SQLite medication or measurement records.
-Local summary buttons and **HowWasYou** continue to use MediMate's existing
-on-device data. Chat transcripts remain in screen memory only. Supabase Auth
-persists an anonymous session on the device so the function can require a user
-JWT. Typed messages are processed by OpenAI and are subject to its current
-data-handling terms; no MediMate health records are automatically included.
+ChatWithMe provides AI assistance using Google Gemini (free tier) or OpenAI ChatGPT.
+It sends the user's typed chat and recent conversational context; it does not read
+or send SQLite medication or measurement records. Local summary buttons and
+**HowWasYou** continue to use MediMate's existing on-device data. Chat transcripts
+remain in screen memory only. Health records stay strictly on the device.
+
+### Supported AI Providers
+
+1. **Google Gemini (Recommended & Free)**:
+   - Free tier with up to 1,500 requests per day and no credit card required.
+   - Fast model: `gemini-3.5-flash-lite`.
+   - Obtain a free API key at [Google AI Studio](https://aistudio.google.com/app/apikey).
+   - Enter your key directly in the mobile app via **⚙️ AI Settings** inside ChatWithMe, or set `EXPO_PUBLIC_GEMINI_API_KEY` in `.env.local`.
+
+2. **OpenAI ChatGPT**:
+   - Uses `gpt-4o-mini`.
+   - Requires active credits/billing on your OpenAI account.
+   - Enter your key in **⚙️ AI Settings** or configure on your Supabase Edge Function.
+
+3. **Supabase Edge Function (`chatwithme`)**:
+   - Server-side proxy supporting both Gemini and OpenAI with automatic fallback when OpenAI rate limits/quotas are exceeded.
 
 ### Set up Supabase and OpenAI
 

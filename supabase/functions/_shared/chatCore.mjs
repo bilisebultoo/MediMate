@@ -1,5 +1,7 @@
 const OPENAI_CHAT_COMPLETIONS_URL =
   "https://api.openai.com/v1/chat/completions";
+const GEMINI_CHAT_COMPLETIONS_URL =
+  "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_MESSAGES = 12;
 const MAX_USER_MESSAGE_LENGTH = 2000;
@@ -147,19 +149,113 @@ function getProviderErrorMessage(status, code) {
   return "The AI service could not answer. Please try again.";
 }
 
+function getGeminiErrorMessage(status, code) {
+  if (code === "invalid_api_key" || status === 400 || status === 401) {
+    return "Google Gemini rejected its configured API key. Update GEMINI_API_KEY in Supabase Edge Function Secrets.";
+  }
+  if (code === "insufficient_quota") {
+    return "The Google Gemini account has no available API quota. Check its billing and usage limits.";
+  }
+  if (code === "rate_limit_exceeded" || code === "RESOURCE_EXHAUSTED" || status === 429) {
+    return "Google Gemini's usage or rate limit was reached. Check limits, or try again later.";
+  }
+  if (code === "model_not_found" || status === 404) {
+    return "The configured Google Gemini model is unavailable. Check GEMINI_MODEL in Supabase Edge Function Secrets.";
+  }
+  return "The Gemini AI service could not answer. Please try again.";
+}
+
 /**
  * @param {object} options
  * @param {() => string | undefined} [options.getApiKey]
  * @param {() => string | undefined} [options.getModel]
+ * @param {() => string | undefined} [options.getGeminiApiKey]
+ * @param {() => string | undefined} [options.getGeminiModel]
+ * @param {() => string | undefined} [options.getProvider]
  * @param {typeof fetch} [options.fetchImpl]
  */
 export function createChatHandler({
   getApiKey,
   getModel,
+  getGeminiApiKey,
+  getGeminiModel,
+  getProvider,
   fetchImpl = globalThis.fetch,
 } = {}) {
-  if (typeof getApiKey !== "function" || typeof fetchImpl !== "function") {
+  if (
+    (typeof getApiKey !== "function" && typeof getGeminiApiKey !== "function") ||
+    typeof fetchImpl !== "function"
+  ) {
     throw new Error("Chat handler requires an API-key provider and fetch.");
+  }
+
+  async function callUpstreamProvider({
+    url,
+    apiKey,
+    model,
+    messages,
+    providerName,
+    errorFormatter,
+  }) {
+    const upstream = await fetchImpl(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [
+          { role: "system", content: SYSTEM_MESSAGE },
+          ...messages,
+        ],
+        max_tokens: 1200,
+        model,
+        temperature: 0.5,
+      }),
+      signal: AbortSignal.timeout(45_000),
+    });
+
+    if (!upstream.ok) {
+      let errorBody;
+      try {
+        errorBody = await upstream.json();
+      } catch {
+        errorBody = null;
+      }
+      const code = getProviderErrorCode(errorBody);
+      const providerMessage = getSafeProviderErrorMessage(
+        errorBody,
+        messages,
+        apiKey,
+      );
+      console.error(
+        `${providerName} returned HTTP status:`,
+        upstream.status,
+        "error code:",
+        code ?? "unknown",
+        "error message:",
+        providerMessage,
+      );
+      return {
+        ok: false,
+        status: upstream.status,
+        code,
+        error: errorFormatter(upstream.status, code),
+      };
+    }
+
+    const result = await upstream.json();
+    const reply = result?.choices?.[0]?.message?.content;
+    if (typeof reply !== "string" || !reply.trim()) {
+      console.error(`${providerName} returned an invalid chat response.`);
+      return {
+        ok: false,
+        status: 502,
+        error: `The ${providerName} service returned an invalid response.`,
+      };
+    }
+
+    return { ok: true, reply: reply.trim() };
   }
 
   return async function handleChatRequest(request) {
@@ -187,74 +283,105 @@ export function createChatHandler({
     const { messages, error } = validateMessages(body?.messages);
     if (error) return jsonResponse({ error }, 400);
 
-    const apiKey = getApiKey();
-    if (!apiKey) {
+    const openAiApiKey = typeof getApiKey === "function" ? getApiKey() : undefined;
+    const geminiApiKey = typeof getGeminiApiKey === "function" ? getGeminiApiKey() : undefined;
+    const preferredProvider = typeof getProvider === "function" ? getProvider()?.trim().toLowerCase() : "auto";
+
+    if (!openAiApiKey && !geminiApiKey) {
       return jsonResponse(
         { error: "OpenAI is not configured for this Supabase project." },
         503,
       );
     }
 
-    const model = getModel()?.trim() || "gpt-4o-mini";
+    const useGemini =
+      (preferredProvider === "gemini" && geminiApiKey) ||
+      (!openAiApiKey && geminiApiKey);
+
     try {
-      const upstream = await fetchImpl(OPENAI_CHAT_COMPLETIONS_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: [
-            { role: "system", content: SYSTEM_MESSAGE },
-            ...messages,
-          ],
-          max_tokens: 1200,
+      if (useGemini) {
+        const rawModel = getGeminiModel?.()?.trim();
+        const model =
+          rawModel && rawModel !== "gemini-1.5-flash" && rawModel !== "gemini-2.0-flash"
+            ? rawModel
+            : "gemini-3.5-flash-lite";
+        const result = await callUpstreamProvider({
+          url: GEMINI_CHAT_COMPLETIONS_URL,
+          apiKey: geminiApiKey,
           model,
-          temperature: 0.5,
-        }),
-        signal: AbortSignal.timeout(45_000),
+          messages,
+          providerName: "Gemini",
+          errorFormatter: getGeminiErrorMessage,
+        });
+
+        if (!result.ok) {
+          // If Gemini failed and OpenAI is available, try fallback
+          if (openAiApiKey) {
+            console.log("Gemini failed, falling back to OpenAI...");
+            const openAiModel = getModel?.()?.trim() || "gpt-4o-mini";
+            const fallbackResult = await callUpstreamProvider({
+              url: OPENAI_CHAT_COMPLETIONS_URL,
+              apiKey: openAiApiKey,
+              model: openAiModel,
+              messages,
+              providerName: "OpenAI",
+              errorFormatter: getProviderErrorMessage,
+            });
+            if (fallbackResult.ok) {
+              return jsonResponse({ reply: fallbackResult.reply });
+            }
+          }
+          return jsonResponse({ error: result.error }, 502);
+        }
+
+        return jsonResponse({ reply: result.reply });
+      }
+
+      // Default: call OpenAI
+      const model = getModel?.()?.trim() || "gpt-4o-mini";
+      const result = await callUpstreamProvider({
+        url: OPENAI_CHAT_COMPLETIONS_URL,
+        apiKey: openAiApiKey,
+        model,
+        messages,
+        providerName: "OpenAI",
+        errorFormatter: getProviderErrorMessage,
       });
 
-      if (!upstream.ok) {
-        let errorBody;
-        try {
-          errorBody = await upstream.json();
-        } catch {
-          errorBody = null;
+      if (!result.ok) {
+        // Fallback from OpenAI to Gemini if rate limit / quota exceeded
+        if (
+          geminiApiKey &&
+          (result.status === 429 ||
+            result.code === "insufficient_quota" ||
+            result.code === "rate_limit_exceeded")
+        ) {
+          console.log("OpenAI rate limit/quota reached; falling back to Gemini...");
+          const rawGeminiModel = getGeminiModel?.()?.trim();
+          const geminiModel =
+            rawGeminiModel && rawGeminiModel !== "gemini-1.5-flash" && rawGeminiModel !== "gemini-2.0-flash"
+              ? rawGeminiModel
+              : "gemini-3.5-flash-lite";
+          const geminiResult = await callUpstreamProvider({
+            url: GEMINI_CHAT_COMPLETIONS_URL,
+            apiKey: geminiApiKey,
+            model: geminiModel,
+            messages,
+            providerName: "Gemini",
+            errorFormatter: getGeminiErrorMessage,
+          });
+          if (geminiResult.ok) {
+            return jsonResponse({ reply: geminiResult.reply });
+          }
         }
-        const code = getProviderErrorCode(errorBody);
-        const providerMessage = getSafeProviderErrorMessage(
-          errorBody,
-          messages,
-          apiKey,
-        );
-        // Temporary diagnostics; remove once the provider failure is identified.
-        console.error(
-          "OpenAI returned HTTP status:",
-          upstream.status,
-          "error code:",
-          code ?? "unknown",
-          "error message:",
-          providerMessage,
-        );
-        return jsonResponse({ error: getProviderErrorMessage(upstream.status, code) }, 502);
+        return jsonResponse({ error: result.error }, 502);
       }
 
-      const result = await upstream.json();
-      const reply = result?.choices?.[0]?.message?.content;
-      if (typeof reply !== "string" || !reply.trim()) {
-        console.error("OpenAI returned an invalid chat response.");
-        return jsonResponse(
-          { error: "The AI service returned an invalid response." },
-          502,
-        );
-      }
-
-      return jsonResponse({ reply: reply.trim() });
+      return jsonResponse({ reply: result.reply });
     } catch (cause) {
       const timedOut = cause?.name === "TimeoutError";
       console.error(
-        timedOut ? "OpenAI request timed out." : "OpenAI request failed.",
+        timedOut ? "AI request timed out." : "AI request failed.",
         cause,
       );
       return jsonResponse(

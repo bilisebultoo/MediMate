@@ -3,6 +3,8 @@ import { router } from "expo-router";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -18,9 +20,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useUserProfiles } from "@/context/UserContext";
 import { useTheme } from "@/hooks/use-theme";
 import {
+  getActiveProviderLabel,
+  getAiConfig,
   isAiChatConfigured,
   requestAiChatReply,
+  saveAiConfig,
   type AiChatMessage,
+  type AiConfig,
+  type AiProvider,
 } from "@/services/aiChat";
 import {
   getWeeklyHealthReview,
@@ -77,10 +84,24 @@ export default function ChatWithMeScreen() {
   const database = useSQLiteContext();
   const { activeProfile, isLoading: isProfileLoading } = useUserProfiles();
   const colors = useTheme();
-  const aiConfigured = isAiChatConfigured();
   const [review, setReview] = useState<WeeklyHealthReview | null>(null);
   const [loadedProfileId, setLoadedProfileId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [aiConfig, setAiConfig] = useState<AiConfig | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const reloadAiConfig = () => {
+    void getAiConfig().then((cfg) => {
+      setAiConfig(cfg);
+    });
+  };
+
+  useEffect(() => {
+    reloadAiConfig();
+  }, []);
+
+  const aiConfigured = isAiChatConfigured();
+  const activeProviderName = getActiveProviderLabel(aiConfig || undefined);
 
   useEffect(() => {
     if (isProfileLoading || !activeProfile) return;
@@ -119,18 +140,39 @@ export default function ChatWithMeScreen() {
         style={styles.keyboard}
       >
         <View style={styles.header}>
-          <Pressable accessibilityRole="button" onPress={() => router.back()}>
-            <Text style={[styles.back, { color: colors.accent }]}>‹ MediMate AI</Text>
-          </Pressable>
+          <View style={styles.headerTop}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back to MediMate AI"
+              onPress={() => router.back()}
+            >
+              <Text style={[styles.back, { color: colors.accent }]}>‹ MediMate AI</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open AI Settings"
+              onPress={() => setIsSettingsOpen(true)}
+              style={[
+                styles.headerSettingButton,
+                { backgroundColor: colors.backgroundElement, borderColor: colors.border },
+              ]}
+            >
+              <Text style={[styles.headerSettingText, { color: colors.accent }]}>
+                ⚙️ AI Settings
+              </Text>
+            </Pressable>
+          </View>
           <Text style={[styles.title, { color: colors.text }]}>ChatWithMe</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Typed messages go to OpenAI · health records stay on this device
+            Typed messages go to {activeProviderName} · health records stay on this device
           </Text>
         </View>
+
         <ChatConversation
           key={activeProfile?.id ?? "no-profile"}
           aiConfigured={aiConfigured}
           colors={colors}
+          onOpenSettings={() => setIsSettingsOpen(true)}
           review={visibleReview}
           summaryError={visibleSummaryError}
           summaryLoading={
@@ -138,6 +180,20 @@ export default function ChatWithMeScreen() {
             Boolean(activeProfile && activeProfile.id !== loadedProfileId)
           }
         />
+
+        {isSettingsOpen ? (
+          <AiSettingsModal
+            key={aiConfig ? JSON.stringify(aiConfig) : "default"}
+            colors={colors}
+            config={aiConfig}
+            onClose={() => setIsSettingsOpen(false)}
+            onSaved={() => {
+              reloadAiConfig();
+              setIsSettingsOpen(false);
+            }}
+            visible={isSettingsOpen}
+          />
+        ) : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -146,12 +202,14 @@ export default function ChatWithMeScreen() {
 function ChatConversation({
   aiConfigured,
   colors,
+  onOpenSettings,
   review,
   summaryError,
   summaryLoading,
 }: {
   aiConfigured: boolean;
   colors: ThemeColors;
+  onOpenSettings: () => void;
   review: WeeklyHealthReview | null;
   summaryError: string | null;
   summaryLoading: boolean;
@@ -193,7 +251,7 @@ function ChatConversation({
 
   const sendAiQuestion = async (text: string) => {
     const trimmed = text.trim();
-    if (!aiConfigured || !trimmed || sendingRef.current) return;
+    if (!trimmed || sendingRef.current) return;
 
     sendingRef.current = true;
     const userMessageId = nextMessageId.current++;
@@ -253,6 +311,14 @@ function ChatConversation({
         ? null
         : "Select a profile to use the local summaries.";
 
+  const showConfigAction =
+    Boolean(sendError) &&
+    (sendError?.includes("limit") ||
+      sendError?.includes("quota") ||
+      sendError?.includes("key") ||
+      sendError?.includes("configured") ||
+      sendError?.includes("Settings"));
+
   return (
     <View style={styles.conversation}>
       <ScrollView
@@ -278,16 +344,27 @@ function ChatConversation({
             conditions or change your treatment plan.
           </Text>
         </View>
+
         {!aiConfigured ? (
-          <Text
-            accessibilityLiveRegion="polite"
-            style={[styles.configurationStatus, { color: colors.textSecondary }]}
+          <View
+            style={[
+              styles.configNotice,
+              { backgroundColor: colors.backgroundElement, borderColor: colors.border },
+            ]}
           >
-            Supabase ChatWithMe isn’t configured yet. Add your project URL and
-            publishable key, then deploy the Edge Function. Your local summary
-            buttons remain available.
-          </Text>
+            <Text style={[styles.configNoticeText, { color: colors.textSecondary }]}>
+              AI chat is ready to be configured. You can use Google Gemini (free API key) or OpenAI ChatGPT.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onOpenSettings}
+              style={[styles.configureNowButton, { backgroundColor: colors.accent }]}
+            >
+              <Text style={styles.configureNowText}>Configure AI (Google Gemini / ChatGPT)</Text>
+            </Pressable>
+          </View>
         ) : null}
+
         {messages.map((message) => (
           <View
             key={message.id}
@@ -306,6 +383,7 @@ function ChatConversation({
             </Text>
           </View>
         ))}
+
         {isSending ? (
           <View style={styles.thinking}>
             <ActivityIndicator color={colors.accent} size="small" />
@@ -314,13 +392,30 @@ function ChatConversation({
             </Text>
           </View>
         ) : null}
+
         {sendError ? (
-          <Text
-            accessibilityLiveRegion="polite"
-            style={[styles.error, { color: colors.danger }]}
-          >
-            {sendError}
-          </Text>
+          <View style={styles.errorContainer}>
+            <Text
+              accessibilityLiveRegion="polite"
+              style={[styles.error, { color: colors.danger }]}
+            >
+              {sendError}
+            </Text>
+            {showConfigAction ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={onOpenSettings}
+                style={[
+                  styles.errorActionChip,
+                  { backgroundColor: colors.backgroundElement, borderColor: colors.accent },
+                ]}
+              >
+                <Text style={[styles.errorActionText, { color: colors.accent }]}>
+                  ⚙️ Switch to Free Google Gemini AI
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
       </ScrollView>
 
@@ -355,11 +450,13 @@ function ChatConversation({
             </Text>
           </Pressable>
         </View>
+
         {localSummaryStatus ? (
           <Text style={[styles.summaryStatus, { color: colors.textSecondary }]}>
             {localSummaryStatus}
           </Text>
         ) : null}
+
         <View
           style={[
             styles.inputRow,
@@ -368,13 +465,11 @@ function ChatConversation({
         >
           <TextInput
             accessibilityLabel="Ask the MediMate AI assistant"
-            editable={aiConfigured && !isSending}
+            editable={!isSending}
             maxLength={2000}
             onChangeText={setQuestion}
             onSubmitEditing={() => void sendAiQuestion(question)}
-            placeholder={
-              aiConfigured ? "Ask a general question" : "AI chat not configured"
-            }
+            placeholder="Ask a general question"
             placeholderTextColor={colors.textSecondary}
             returnKeyType="send"
             style={[styles.input, { color: colors.text }]}
@@ -384,15 +479,15 @@ function ChatConversation({
             accessibilityRole="button"
             accessibilityLabel="Send message to AI"
             accessibilityState={{
-              disabled: !aiConfigured || !question.trim() || isSending,
+              disabled: !question.trim() || isSending,
             }}
-            disabled={!aiConfigured || !question.trim() || isSending}
+            disabled={!question.trim() || isSending}
             onPress={() => void sendAiQuestion(question)}
             style={[
               styles.sendButton,
               {
                 backgroundColor: colors.accent,
-                opacity: aiConfigured && question.trim() && !isSending ? 1 : 0.5,
+                opacity: question.trim() && !isSending ? 1 : 0.5,
               },
             ]}
           >
@@ -404,12 +499,335 @@ function ChatConversation({
   );
 }
 
+function AiSettingsModal({
+  colors,
+  config,
+  onClose,
+  onSaved,
+  visible,
+}: {
+  colors: ThemeColors;
+  config: AiConfig | null;
+  onClose: () => void;
+  onSaved: () => void;
+  visible: boolean;
+}) {
+  const initialGeminiModel =
+    config?.geminiModel &&
+    config.geminiModel !== "gemini-1.5-flash" &&
+    config.geminiModel !== "gemini-2.0-flash"
+      ? config.geminiModel
+      : "gemini-3.5-flash-lite";
+
+  const [provider, setProvider] = useState<AiProvider>(
+    config?.provider === "openai" ? "openai" : "gemini",
+  );
+  const [geminiKey, setGeminiKey] = useState(config?.geminiApiKey || "");
+  const [geminiModel, setGeminiModel] = useState(initialGeminiModel);
+  const [openAiKey, setOpenAiKey] = useState(config?.openAiApiKey || "");
+  const [openAiModel, setOpenAiModel] = useState(
+    config?.openAiModel || "gpt-4o-mini",
+  );
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await saveAiConfig({
+        provider,
+        geminiApiKey: geminiKey.trim(),
+        geminiModel,
+        openAiApiKey: openAiKey.trim(),
+        openAiModel,
+      });
+      onSaved();
+    } catch (e) {
+      console.error("Could not save AI config:", e);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const openGeminiKeyWebsite = () => {
+    void Linking.openURL("https://aistudio.google.com/app/apikey");
+  };
+
+  return (
+    <Modal
+      animationType="slide"
+      onRequestClose={onClose}
+      transparent
+      visible={visible}
+    >
+      <View style={modalStyles.overlay}>
+        <View
+          style={[
+            modalStyles.card,
+            { backgroundColor: colors.background, borderColor: colors.border },
+          ]}
+        >
+          <View style={modalStyles.headerRow}>
+            <Text style={[modalStyles.title, { color: colors.text }]}>
+              AI Provider Settings
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close settings"
+              onPress={onClose}
+              style={modalStyles.closeButton}
+            >
+              <Text style={[modalStyles.closeText, { color: colors.textSecondary }]}>✕</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView style={modalStyles.body} keyboardShouldPersistTaps="handled">
+            <Text style={[modalStyles.sectionLabel, { color: colors.textSecondary }]}>
+              Select AI Provider
+            </Text>
+            <View style={modalStyles.tabRow}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setProvider("gemini")}
+                style={[
+                  modalStyles.tabButton,
+                  {
+                    backgroundColor:
+                      provider === "gemini" ? colors.accent : colors.backgroundElement,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    modalStyles.tabText,
+                    { color: provider === "gemini" ? "#FFFFFF" : colors.text },
+                  ]}
+                >
+                  Google Gemini (Free)
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setProvider("openai")}
+                style={[
+                  modalStyles.tabButton,
+                  {
+                    backgroundColor:
+                      provider === "openai" ? colors.accent : colors.backgroundElement,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    modalStyles.tabText,
+                    { color: provider === "openai" ? "#FFFFFF" : colors.text },
+                  ]}
+                >
+                  OpenAI ChatGPT
+                </Text>
+              </Pressable>
+            </View>
+
+            {provider === "gemini" ? (
+              <View style={modalStyles.providerBlock}>
+                <View
+                  style={[
+                    modalStyles.tipBox,
+                    { backgroundColor: colors.backgroundSelected, borderColor: colors.border },
+                  ]}
+                >
+                  <Text style={[modalStyles.tipTitle, { color: colors.text }]}>
+                    ✨ 100% Free Google Gemini API
+                  </Text>
+                  <Text style={[modalStyles.tipText, { color: colors.textSecondary }]}>
+                    Google Gemini provides a generous free tier (1,500 requests/day) with no credit card required.
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={openGeminiKeyWebsite}
+                    style={[modalStyles.linkButton, { borderColor: colors.accent }]}
+                  >
+                    <Text style={[modalStyles.linkButtonText, { color: colors.accent }]}>
+                      Get Free Gemini Key (Google AI Studio) ↗
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <Text style={[modalStyles.fieldLabel, { color: colors.text }]}>
+                  Gemini API Key
+                </Text>
+                <TextInput
+                  accessibilityLabel="Gemini API Key"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onChangeText={setGeminiKey}
+                  placeholder="Paste AIzaSy... API key"
+                  placeholderTextColor={colors.textSecondary}
+                  style={[
+                    modalStyles.input,
+                    {
+                      backgroundColor: colors.backgroundElement,
+                      borderColor: colors.border,
+                      color: colors.text,
+                    },
+                  ]}
+                  value={geminiKey}
+                />
+
+                <Text style={[modalStyles.fieldLabel, { color: colors.text }]}>
+                  Gemini Model
+                </Text>
+                <View style={modalStyles.modelSelectorRow}>
+                  {["gemini-3.5-flash-lite"].map((m) => (
+                    <Pressable
+                      key={m}
+                      accessibilityRole="button"
+                      onPress={() => setGeminiModel(m)}
+                      style={[
+                        modalStyles.modelChip,
+                        {
+                          backgroundColor:
+                            geminiModel === m ? colors.accent : colors.backgroundElement,
+                          borderColor: colors.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          modalStyles.modelChipText,
+                          { color: geminiModel === m ? "#FFFFFF" : colors.text },
+                        ]}
+                      >
+                        {m}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            ) : (
+              <View style={modalStyles.providerBlock}>
+                <View
+                  style={[
+                    modalStyles.tipBox,
+                    { backgroundColor: colors.backgroundSelected, borderColor: colors.border },
+                  ]}
+                >
+                  <Text style={[modalStyles.tipTitle, { color: colors.text }]}>
+                    OpenAI API Key
+                  </Text>
+                  <Text style={[modalStyles.tipText, { color: colors.textSecondary }]}>
+                    Requires active credit billing on your OpenAI account. If quota limit is reached, switch to Google Gemini above.
+                  </Text>
+                </View>
+
+                <Text style={[modalStyles.fieldLabel, { color: colors.text }]}>
+                  OpenAI API Key
+                </Text>
+                <TextInput
+                  accessibilityLabel="OpenAI API Key"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onChangeText={setOpenAiKey}
+                  placeholder="Paste sk-... API key"
+                  placeholderTextColor={colors.textSecondary}
+                  style={[
+                    modalStyles.input,
+                    {
+                      backgroundColor: colors.backgroundElement,
+                      borderColor: colors.border,
+                      color: colors.text,
+                    },
+                  ]}
+                  value={openAiKey}
+                />
+
+                <Text style={[modalStyles.fieldLabel, { color: colors.text }]}>
+                  OpenAI Model
+                </Text>
+                <View style={modalStyles.modelSelectorRow}>
+                  {["gpt-4o-mini"].map((m) => (
+                    <Pressable
+                      key={m}
+                      accessibilityRole="button"
+                      onPress={() => setOpenAiModel(m)}
+                      style={[
+                        modalStyles.modelChip,
+                        {
+                          backgroundColor:
+                            openAiModel === m ? colors.accent : colors.backgroundElement,
+                          borderColor: colors.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          modalStyles.modelChipText,
+                          { color: openAiModel === m ? "#FFFFFF" : colors.text },
+                        ]}
+                      >
+                        {m}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={modalStyles.footerRow}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onClose}
+              style={[
+                modalStyles.footerButton,
+                { backgroundColor: colors.backgroundElement, borderColor: colors.border },
+              ]}
+            >
+              <Text style={[modalStyles.footerButtonText, { color: colors.text }]}>
+                Cancel
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={isSaving}
+              onPress={handleSave}
+              style={[
+                modalStyles.footerButton,
+                modalStyles.saveButton,
+                { backgroundColor: colors.accent },
+              ]}
+            >
+              <Text style={modalStyles.saveButtonText}>
+                {isSaving ? "Saving…" : "Save Settings"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   keyboard: { flex: 1 },
   conversation: { flex: 1 },
   header: { paddingHorizontal: 20, paddingTop: 8 },
-  back: { fontSize: 15, fontWeight: "600", marginBottom: 16 },
+  headerTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  back: { fontSize: 15, fontWeight: "600" },
+  headerSettingButton: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  headerSettingText: { fontSize: 13, fontWeight: "600" },
   title: { fontSize: 26, fontWeight: "700" },
   subtitle: { fontSize: 13, marginTop: 5 },
   messages: { flexGrow: 1, padding: 16, paddingBottom: 8 },
@@ -422,12 +840,112 @@ const styles = StyleSheet.create({
   quickQuestion: { borderRadius: 20, borderWidth: 1, marginRight: 8, paddingHorizontal: 12, paddingVertical: 8 },
   quickQuestionText: { fontSize: 12, fontWeight: "600" },
   summaryStatus: { fontSize: 12, marginBottom: 8, paddingHorizontal: 2 },
-  configurationStatus: { fontSize: 13, lineHeight: 19, marginBottom: 10, paddingHorizontal: 10 },
+  configNotice: {
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 14,
+    padding: 14,
+  },
+  configNoticeText: { fontSize: 13, lineHeight: 18, marginBottom: 10 },
+  configureNowButton: {
+    alignItems: "center",
+    borderRadius: 10,
+    paddingVertical: 8,
+  },
+  configureNowText: { color: "#FFFFFF", fontSize: 13, fontWeight: "600" },
   inputRow: { alignItems: "center", borderRadius: 14, borderWidth: 1, flexDirection: "row", padding: 6 },
   input: { flex: 1, fontSize: 14, maxHeight: 96, minHeight: 42, paddingHorizontal: 10 },
   sendButton: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
   sendText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
   thinking: { alignItems: "center", alignSelf: "flex-start", flexDirection: "row", marginBottom: 10, padding: 10 },
   thinkingText: { fontSize: 13, marginLeft: 8 },
-  error: { fontSize: 13, lineHeight: 19, marginBottom: 10, paddingHorizontal: 10 },
+  errorContainer: {
+    marginBottom: 10,
+    paddingHorizontal: 10,
+  },
+  error: { fontSize: 13, lineHeight: 19, marginBottom: 6 },
+  errorActionChip: {
+    alignSelf: "flex-start",
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  errorActionText: { fontSize: 12, fontWeight: "600" },
+});
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
+    flex: 1,
+    justifyContent: "center",
+    padding: 18,
+  },
+  card: {
+    borderRadius: 20,
+    borderWidth: 1,
+    maxHeight: "85%",
+    padding: 20,
+    width: "100%",
+  },
+  headerRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  title: { fontSize: 20, fontWeight: "700" },
+  closeButton: { padding: 4 },
+  closeText: { fontSize: 18, fontWeight: "600" },
+  body: { marginBottom: 16 },
+  sectionLabel: { fontSize: 12, fontWeight: "600", marginBottom: 8, textTransform: "uppercase" },
+  tabRow: { flexDirection: "row", gap: 8, marginBottom: 16 },
+  tabButton: {
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  tabText: { fontSize: 13, fontWeight: "600" },
+  providerBlock: { gap: 12 },
+  tipBox: { borderRadius: 14, borderWidth: 1, padding: 12 },
+  tipTitle: { fontSize: 14, fontWeight: "700", marginBottom: 4 },
+  tipText: { fontSize: 12, lineHeight: 17, marginBottom: 8 },
+  linkButton: {
+    alignSelf: "flex-start",
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  linkButtonText: { fontSize: 12, fontWeight: "600" },
+  fieldLabel: { fontSize: 13, fontWeight: "600" },
+  input: {
+    borderRadius: 10,
+    borderWidth: 1,
+    fontSize: 13,
+    minHeight: 40,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  modelSelectorRow: { flexDirection: "row", gap: 8 },
+  modelChip: {
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  modelChipText: { fontSize: 12, fontWeight: "600" },
+  footerRow: { flexDirection: "row", gap: 10, justifyContent: "flex-end" },
+  footerButton: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  footerButtonText: { fontSize: 14, fontWeight: "600" },
+  saveButton: { borderWidth: 0 },
+  saveButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
 });

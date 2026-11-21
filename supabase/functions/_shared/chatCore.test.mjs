@@ -202,3 +202,89 @@ test("rejects oversized requests before calling the provider", async () => {
   assert.equal(response.status, 413);
   assert.equal(providerCalled, false);
 });
+
+test("forwards conversation messages to Gemini when configured", async () => {
+  let upstreamRequest;
+  const handler = createChatHandler({
+    getApiKey: () => undefined,
+    getGeminiApiKey: () => "gemini-test-key",
+    getGeminiModel: () => "gemini-3.5-flash-lite",
+    fetchImpl: async (url, options) => {
+      upstreamRequest = { url, options };
+      return Response.json({
+        choices: [{ message: { content: "Here is Gemini answer." } }],
+      });
+    },
+  });
+
+  const response = await handler(
+    request({
+      messages: [{ role: "user", content: "Tell me about vitamins." }],
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { reply: "Here is Gemini answer." });
+  assert.equal(upstreamRequest.options.headers.Authorization, "Bearer gemini-test-key");
+  const body = JSON.parse(upstreamRequest.options.body);
+  assert.equal(body.model, "gemini-3.5-flash-lite");
+});
+
+test("falls back from OpenAI rate limit / quota to Gemini when both keys are present", async () => {
+  let calls = [];
+  const handler = createChatHandler({
+    getApiKey: () => "openai-expired-key",
+    getGeminiApiKey: () => "gemini-backup-key",
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      if (url.includes("openai.com")) {
+        return Response.json(
+          { error: { code: "rate_limit_exceeded", message: "quota exceeded" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({
+        choices: [{ message: { content: "Gemini fallback reply." } }],
+      });
+    },
+  });
+
+  const response = await handler(
+    request({
+      messages: [{ role: "user", content: "Hello what can u help me with" }],
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { reply: "Gemini fallback reply." });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url.includes("openai.com"), true);
+  assert.equal(calls[1].url.includes("googleapis.com"), true);
+  const fallbackBody = JSON.parse(calls[1].options.body);
+  assert.equal(fallbackBody.model, "gemini-3.5-flash-lite");
+});
+
+test("normalizes legacy gemini-1.5-flash and gemini-2.0-flash configurations to gemini-3.5-flash-lite", async () => {
+  let upstreamRequest;
+  const handler = createChatHandler({
+    getApiKey: () => undefined,
+    getGeminiApiKey: () => "gemini-test-key",
+    getGeminiModel: () => "gemini-1.5-flash",
+    fetchImpl: async (url, options) => {
+      upstreamRequest = { url, options };
+      return Response.json({
+        choices: [{ message: { content: "Gemini modernized model reply." } }],
+      });
+    },
+  });
+
+  const response = await handler(
+    request({
+      messages: [{ role: "user", content: "Hello" }],
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  const body = JSON.parse(upstreamRequest.options.body);
+  assert.equal(body.model, "gemini-3.5-flash-lite");
+});

@@ -12,6 +12,9 @@ const issuer = new URL("/auth/v1", supabaseUrl).toString();
 const handleChat = createChatHandler({
   getApiKey: () => Deno.env.get("OPENAI_API_KEY"),
   getModel: () => Deno.env.get("OPENAI_MODEL"),
+  getGeminiApiKey: () => Deno.env.get("GEMINI_API_KEY"),
+  getGeminiModel: () => Deno.env.get("GEMINI_MODEL"),
+  getProvider: () => Deno.env.get("AI_PROVIDER"),
 });
 
 export default {
