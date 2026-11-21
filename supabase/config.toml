@@ -1,0 +1,4 @@
+project_id = "medimate"
+
+[functions.chatwithme]
+verify_jwt = false
