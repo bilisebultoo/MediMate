@@ -112,6 +112,7 @@ async function performRefillNotificationRefresh(
             kind: REMINDER_KIND,
             medicineId: record.id,
             userId: record.user_id,
+            url: "/home",
           },
         },
         trigger: {

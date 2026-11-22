@@ -1,5 +1,5 @@
-import { ScreenPlaceholder } from '@/components/common/screen-placeholder';
+import { Redirect } from "expo-router";
 
 export default function WelcomeScreen() {
-  return <ScreenPlaceholder title="Welcome" />;
+  return <Redirect href="/(auth)/login" />;
 }

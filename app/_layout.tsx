@@ -48,52 +48,85 @@ function NotificationNavigation() {
 function NativeNotificationNavigation() {
   const { isReady, isLocked, loadError } = useAppLock();
   const navigationState = useRootNavigationState();
+  const lastResponse = Notifications.useLastNotificationResponse();
 
+  const handledResponseId = useRef<string | null>(null);
   const pendingHomeRedirect = useRef(false);
   const [responseVersion, setResponseVersion] = useState(0);
 
+  const queueHomeRedirect = (
+    response?: Notifications.NotificationResponse | null,
+  ) => {
+    const identifier =
+      response?.notification?.request?.identifier ||
+      (response
+        ? JSON.stringify(response.notification?.request?.content?.data ?? {})
+        : null);
+
+    if (identifier && handledResponseId.current === identifier) {
+      return;
+    }
+
+    if (identifier) {
+      handledResponseId.current = identifier;
+    }
+
+    console.log("Notification tapped. Preparing Home redirect.");
+    pendingHomeRedirect.current = true;
+    setResponseVersion((version) => version + 1);
+  };
+
   useEffect(() => {
-    let isMounted = true;
+    if (lastResponse) {
+      queueHomeRedirect(lastResponse);
+    }
+  }, [lastResponse]);
 
-    const queueHomeRedirect = () => {
-      if (!isMounted) return;
-
-      console.log("Notification tapped. Preparing Home redirect.");
-
-      pendingHomeRedirect.current = true;
-      setResponseVersion((version) => version + 1);
-    };
-
-    // Listen whenever the user taps a notification.
+  useEffect(() => {
+    // 1. Listen whenever the user taps a notification while app is running / in foreground.
     const responseSubscription =
       Notifications.addNotificationResponseReceivedListener((response) => {
         console.log(
           "Notification response received:",
-          response.notification.request.content.title,
+          response.notification?.request?.content?.title,
         );
-
-        queueHomeRedirect();
+        queueHomeRedirect(response);
       });
 
-    // Check whether a notification opened the app.
-    const checkInitialNotification = async () => {
+    // 2. Check for notification response on startup / resume.
+    const checkNotificationResponse = async () => {
       try {
         const response = await Notifications.getLastNotificationResponseAsync();
-
         if (response) {
-          console.log("App opened from a notification.");
-          queueHomeRedirect();
+          console.log("App opened from notification response.");
+          queueHomeRedirect(response);
         }
       } catch (error) {
         console.error("Error checking notification response:", error);
       }
     };
 
-    void checkInitialNotification();
+    void checkNotificationResponse();
+
+    // 3. When returning from another app (e.g. Telegram) to foreground, re-check for notification tap.
+    let timer1: ReturnType<typeof setTimeout> | null = null;
+    let timer2: ReturnType<typeof setTimeout> | null = null;
+
+    const appStateSubscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void checkNotificationResponse();
+        if (timer1) clearTimeout(timer1);
+        if (timer2) clearTimeout(timer2);
+        timer1 = setTimeout(() => void checkNotificationResponse(), 150);
+        timer2 = setTimeout(() => void checkNotificationResponse(), 450);
+      }
+    });
 
     return () => {
-      isMounted = false;
       responseSubscription.remove();
+      appStateSubscription.remove();
+      if (timer1) clearTimeout(timer1);
+      if (timer2) clearTimeout(timer2);
     };
   }, []);
 
@@ -108,14 +141,54 @@ function NativeNotificationNavigation() {
       return;
     }
 
-    console.log("Redirecting to MediMate Home screen.");
-
+    console.log("Redirecting to MediMate Home screen (/home).");
     pendingHomeRedirect.current = false;
 
-    router.replace("/(tabs)/home");
+    const navigateToHome = () => {
+      try {
+        if (router.canDismiss()) {
+          router.dismissAll();
+        }
+      } catch {
+        // ignore if stack cannot be dismissed
+      }
 
-    Notifications.clearLastNotificationResponse();
-  }, [responseVersion, isReady, isLocked, loadError, navigationState?.key]);
+      try {
+        router.dismissTo("/home");
+      } catch {
+        // fallback to navigate
+      }
+
+      try {
+        router.navigate("/home");
+      } catch {
+        try {
+          router.replace("/home");
+        } catch (navError) {
+          console.error("Navigation error to Home screen:", navError);
+        }
+      }
+    };
+
+    navigateToHome();
+    const retryTimer = setTimeout(navigateToHome, 100);
+
+    try {
+      void Notifications.clearLastNotificationResponseAsync?.();
+    } catch {
+      // ignore if clearLastNotificationResponse is unavailable in current runtime
+    }
+
+    return () => {
+      clearTimeout(retryTimer);
+    };
+  }, [
+    responseVersion,
+    isReady,
+    isLocked,
+    loadError,
+    navigationState?.key,
+  ]);
 
   return null;
 }

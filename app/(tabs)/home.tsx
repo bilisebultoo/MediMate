@@ -231,6 +231,9 @@ export default function HomeScreen() {
       : hour < 17
         ? "Good afternoon!"
         : "Good evening!";
+  const userFirstName = activeProfile?.name
+    ? activeProfile.name.trim().split(/\s+/)[0]
+    : "";
   const takenDoses = doses.filter((dose) => dose.status === "TAKEN");
   const pendingDoses = doses.filter((dose) => dose.status === "PENDING");
   const missedDoses = doses.filter((dose) => dose.status === "MISSED");
@@ -254,7 +257,7 @@ export default function HomeScreen() {
               {greeting}
             </Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              {activeProfile ? `Welcome, ${activeProfile.name}` : "Welcome to MediMate"}
+              {userFirstName ? `Welcome, ${userFirstName}` : "Welcome to MediMate"}
             </Text>
             <Text style={[styles.date, { color: colors.textSecondary }]}>
               {dateText}
@@ -263,7 +266,7 @@ export default function HomeScreen() {
 
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>
-              {activeProfile?.name.trim().charAt(0).toUpperCase() || "U"}
+              {userFirstName ? userFirstName.charAt(0).toUpperCase() : "U"}
             </Text>
           </View>
         </View>

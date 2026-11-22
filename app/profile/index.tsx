@@ -124,6 +124,11 @@ export default function ProfileScreen() {
           onPress={() => router.push("/(auth)/user-selection")}
           secondary
         />
+        <ActionButton
+          title="Switch User / Log In Screen"
+          onPress={() => router.push("/(auth)/login")}
+          secondary
+        />
       </ScrollView>
     </SafeAreaView>
   );

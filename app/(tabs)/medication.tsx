@@ -1,12 +1,14 @@
 import { useCallback, useState } from "react";
 
 import {
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  useColorScheme,
 } from "react-native";
 
 import { useFocusEffect, useRouter } from "expo-router";
@@ -15,6 +17,8 @@ import { useSQLiteContext } from "expo-sqlite";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useUserProfiles } from "@/context/UserContext";
 import { useTheme } from "@/hooks/use-theme";
+
+const MEDICINES_BACKGROUND_IMAGE = require("@/assets/images/medicines-background.jpg");
 
 // Medicine data structure
 type Medicine = {
@@ -36,6 +40,8 @@ export default function MedicationScreen() {
   const database = useSQLiteContext();
   const { activeProfile } = useUserProfiles();
   const colors = useTheme();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === "dark";
 
   // Store medicines loaded from SQLite
   const [medicines, setMedicines] = useState<Medicine[]>([]);
@@ -101,105 +107,148 @@ export default function MedicationScreen() {
   ).length;
 
   return (
-    <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: colors.background }]}
-    >
-      <ScrollView
-        style={[styles.container, { backgroundColor: colors.background }]}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
-      >
-        {/* Header */}
+    <View style={[styles.rootContainer, { backgroundColor: colors.background }]}>
+      {/* Smooth fixed background artwork */}
+      <Image
+        source={MEDICINES_BACKGROUND_IMAGE}
+        style={styles.backgroundImage}
+        resizeMode="cover"
+      />
 
-        <View style={styles.header}>
-          <View>
-            <Text style={[styles.title, { color: colors.text }]}>
-              My Medicines
-            </Text>
+      {/* Smooth translucent overlay to ensure high contrast, readability, and theme compatibility */}
+      <View
+        style={[
+          styles.overlay,
+          {
+            backgroundColor: isDark
+              ? "rgba(10, 22, 33, 0.86)"
+              : "rgba(244, 248, 251, 0.74)",
+          },
+        ]}
+      />
 
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              Manage your medications
-            </Text>
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView
+          style={styles.container}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+        >
+          {/* Header */}
+
+          <View style={styles.header}>
+            <View>
+              <Text style={[styles.title, { color: colors.text }]}>
+                My Medicines
+              </Text>
+
+              <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                Manage your medications
+              </Text>
+            </View>
+
+            <View style={styles.headerIcon}>
+              <Text style={styles.iconText}>💊</Text>
+            </View>
           </View>
 
-          <View style={styles.headerIcon}>
-            <Text style={styles.iconText}>💊</Text>
+          {/* Search */}
+
+          <View
+            style={[
+              styles.searchContainer,
+              {
+                backgroundColor: isDark
+                  ? "rgba(23, 38, 54, 0.92)"
+                  : "rgba(255, 255, 255, 0.92)",
+                borderColor: isDark ? "rgba(255, 255, 255, 0.12)" : "#E2EAE6",
+              },
+            ]}
+          >
+            <Text style={styles.searchIcon}>🔍</Text>
+
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              accessibilityLabel="Search medicines"
+              placeholder="Search medicines..."
+              placeholderTextColor={colors.textSecondary}
+              value={search}
+              onChangeText={setSearch}
+            />
           </View>
-        </View>
 
-        {/* Search */}
+          {/* Filters */}
 
-        <View style={styles.searchContainer}>
-          <Text style={styles.searchIcon}>🔍</Text>
+          <View style={styles.filterContainer}>
+            {filters.map((filter) => {
+              const isSelected = selectedFilter === filter;
 
-          <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            accessibilityLabel="Search medicines"
-            placeholder="Search medicines..."
-            placeholderTextColor={colors.textSecondary}
-            value={search}
-            onChangeText={setSearch}
-          />
-        </View>
-
-        {/* Filters */}
-
-        <View style={styles.filterContainer}>
-          {filters.map((filter) => {
-            const isSelected = selectedFilter === filter;
-
-            return (
-              <Pressable
-                key={filter}
-                onPress={() => setSelectedFilter(filter)}
-                style={[
-                  styles.filterButton,
-                  isSelected && styles.selectedFilter,
-                ]}
-              >
-                <Text
+              return (
+                <Pressable
+                  key={filter}
+                  onPress={() => setSelectedFilter(filter)}
                   style={[
-                    styles.filterText,
-                    isSelected && styles.selectedFilterText,
+                    styles.filterButton,
+                    {
+                      backgroundColor: isDark
+                        ? "rgba(23, 38, 54, 0.92)"
+                        : "rgba(255, 255, 255, 0.92)",
+                      borderColor: isDark
+                        ? "rgba(255, 255, 255, 0.12)"
+                        : "#E5ECE8",
+                    },
+                    isSelected && styles.selectedFilter,
                   ]}
                 >
-                  {filter}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {/* Medicine Summary */}
-
-        <View
-          style={[
-            styles.summaryCard,
-            { backgroundColor: colors.backgroundElement },
-          ]}
-        >
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryNumber}>{totalMedicines}</Text>
-
-            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Total</Text>
+                  <Text
+                    style={[
+                      styles.filterText,
+                      isSelected && styles.selectedFilterText,
+                    ]}
+                  >
+                    {filter}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
 
-          <View style={styles.divider} />
+          {/* Medicine Summary */}
 
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryNumber}>{activeMedicines}</Text>
+          <View
+            style={[
+              styles.summaryCard,
+              {
+                backgroundColor: isDark
+                  ? "rgba(23, 38, 54, 0.92)"
+                  : "rgba(255, 255, 255, 0.92)",
+                borderColor: isDark
+                  ? "rgba(255, 255, 255, 0.12)"
+                  : "#EDF1EF",
+              },
+            ]}
+          >
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryNumber}>{totalMedicines}</Text>
 
-            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Active</Text>
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Total</Text>
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryNumber}>{activeMedicines}</Text>
+
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Active</Text>
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryNumber}>{completedMedicines}</Text>
+
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Completed</Text>
+            </View>
           </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryNumber}>{completedMedicines}</Text>
-
-            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Completed</Text>
-          </View>
-        </View>
 
         {/* Medicine List Header */}
 
@@ -220,8 +269,10 @@ export default function MedicationScreen() {
             style={[
               styles.emptyCard,
               {
-                backgroundColor: colors.backgroundElement,
-                borderColor: colors.border,
+                backgroundColor: isDark
+                  ? "rgba(23, 38, 54, 0.92)"
+                  : "rgba(255, 255, 255, 0.92)",
+                borderColor: isDark ? "rgba(255, 255, 255, 0.12)" : colors.border,
               },
             ]}
           >
@@ -259,8 +310,12 @@ export default function MedicationScreen() {
               style={[
                 styles.medicineCard,
                 {
-                  backgroundColor: colors.backgroundElement,
-                  borderColor: colors.border,
+                  backgroundColor: isDark
+                    ? "rgba(23, 38, 54, 0.92)"
+                    : "rgba(255, 255, 255, 0.92)",
+                  borderColor: isDark
+                    ? "rgba(255, 255, 255, 0.12)"
+                    : "#EDF1EF",
                 },
               ]}
               onPress={() =>
@@ -339,33 +394,64 @@ export default function MedicationScreen() {
             </Pressable>
           ))
         )}
-
-        {/* Add Medicine Button */}
-
-        <Pressable
-          style={styles.addButton}
-          onPress={() => router.push("/medication/add-medicine")}
-        >
-          <Text style={styles.addButtonText}>+ Add New Medicine</Text>
-        </Pressable>
       </ScrollView>
+
+      {/* Floating Add Medicine Button */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Add New Medicine"
+        onPress={() => router.push("/medication/add-medicine")}
+        style={({ pressed }) => [
+          styles.fabButton,
+          { backgroundColor: colors.accent, opacity: pressed ? 0.85 : 1 },
+        ]}
+      >
+        <Text style={styles.fabButtonText}>+</Text>
+      </Pressable>
     </SafeAreaView>
+  </View>
   );
 }
 
 const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+    position: "relative",
+  },
+
+  backgroundImage: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: "100%",
+    height: "100%",
+  },
+
+  overlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: "100%",
+    height: "100%",
+  },
+
   safeArea: {
     flex: 1,
-    backgroundColor: "#F7FAF9",
+    backgroundColor: "transparent",
   },
 
   container: {
     flex: 1,
+    backgroundColor: "transparent",
   },
 
   content: {
     padding: 20,
-    paddingBottom: 35,
+    paddingBottom: 95,
   },
 
   header: {
@@ -649,17 +735,28 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
 
-  addButton: {
-    backgroundColor: "#287A65",
-    padding: 17,
-    borderRadius: 13,
+  fabButton: {
     alignItems: "center",
-    marginTop: 20,
+    borderRadius: 30,
+    bottom: 20,
+    elevation: 6,
+    height: 60,
+    justifyContent: "center",
+    position: "absolute",
+    right: 20,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    width: 60,
   },
 
-  addButtonText: {
+  fabButtonText: {
     color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "bold",
+    fontSize: 32,
+    fontWeight: "600",
+    lineHeight: 34,
+    textAlign: "center",
+    includeFontPadding: false,
   },
 });

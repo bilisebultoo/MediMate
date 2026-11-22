@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { router } from "expo-router";
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -136,7 +137,7 @@ export default function ChatWithMeScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboard}
       >
         <View style={styles.header}>
@@ -226,8 +227,16 @@ function ChatConversation({
 
   useEffect(() => {
     isMountedRef.current = true;
+    const keyboardSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      },
+    );
+
     return () => {
       isMountedRef.current = false;
+      keyboardSub.remove();
       controllerRef.current?.abort();
     };
   }, []);
@@ -324,6 +333,7 @@ function ChatConversation({
       <ScrollView
         ref={scrollViewRef}
         contentContainerStyle={styles.messages}
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         keyboardShouldPersistTaps="handled"
         onContentSizeChange={() =>
           scrollViewRef.current?.scrollToEnd({ animated: true })

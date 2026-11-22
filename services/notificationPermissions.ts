@@ -1,31 +1,33 @@
-import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
-function supportsAndroidExactAlarms(): boolean {
-  const isExpoGo =
-    Constants.expoGoConfig != null || Constants.appOwnership === "expo";
-  return Platform.OS === "android" && !isExpoGo;
-}
-
 export async function requestExactAlarmAccess(): Promise<boolean> {
-  if (!supportsAndroidExactAlarms()) return true;
+  if (Platform.OS !== "android") return true;
 
-  const currentPermission = await Notifications.getExactAlarmPermissionsAsync();
-  if (currentPermission.granted || !currentPermission.canAskAgain) {
-    return currentPermission.granted;
+  try {
+    const currentPermission = await Notifications.getExactAlarmPermissionsAsync();
+    if (currentPermission.granted || !currentPermission.canAskAgain) {
+      return currentPermission.granted;
+    }
+
+    const requestedPermission =
+      await Notifications.requestExactAlarmPermissionsAsync();
+    return requestedPermission.granted;
+  } catch (error) {
+    console.warn("Could not check exact alarm permissions:", error);
+    return true;
   }
-
-  const requestedPermission =
-    await Notifications.requestExactAlarmPermissionsAsync();
-  return requestedPermission.granted;
 }
 
 export async function getNotificationDelivery(): Promise<
   "alarmClock" | "bestEffort"
 > {
-  if (!supportsAndroidExactAlarms()) return "bestEffort";
+  if (Platform.OS !== "android") return "bestEffort";
 
-  const permission = await Notifications.getExactAlarmPermissionsAsync();
-  return permission.granted ? "alarmClock" : "bestEffort";
+  try {
+    const permission = await Notifications.getExactAlarmPermissionsAsync();
+    return permission.granted !== false ? "alarmClock" : "bestEffort";
+  } catch {
+    return "alarmClock";
+  }
 }

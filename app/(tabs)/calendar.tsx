@@ -6,6 +6,7 @@ import { useSQLiteContext } from "expo-sqlite";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -15,6 +16,7 @@ import {
   Text,
   TextInput,
   View,
+  useColorScheme,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useUserProfiles } from "@/context/UserContext";
@@ -33,6 +35,8 @@ import {
   type AppointmentInput,
 } from "@/services/appointmentService";
 import type { Appointment } from "@/types/appointment";
+
+const CALENDAR_BACKGROUND_IMAGE = require("@/assets/images/calendar-background.jpg");
 
 type PickerMode = "date" | "time";
 
@@ -116,6 +120,8 @@ export default function CalendarScreen() {
   const database = useSQLiteContext();
   const { activeProfile } = useUserProfiles();
   const colors = useTheme();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === "dark";
   const [month, setMonth] = useState(() => {
     const date = new Date();
     return new Date(date.getFullYear(), date.getMonth(), 1);
@@ -323,53 +329,89 @@ export default function CalendarScreen() {
   };
 
   return (
-    <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: colors.background }]}
-    >
-      <ScrollView
-        style={{ backgroundColor: colors.background }}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={[styles.eyebrow, { color: colors.accent }]}>
-          YOUR SCHEDULE
-        </Text>
-        <Text style={[styles.title, { color: colors.text }]}>Calendar</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          Keep your appointments organized in one place.
-        </Text>
+    <View style={[styles.rootContainer, { backgroundColor: colors.background }]}>
+      {/* Smooth fixed background artwork */}
+      <Image
+        source={CALENDAR_BACKGROUND_IMAGE}
+        style={styles.backgroundImage}
+        resizeMode="cover"
+      />
 
-        <View style={styles.monthHeader}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Previous month"
-            onPress={() => changeMonth(-1)}
-            style={styles.monthArrow}
-          >
-            <Text style={styles.monthArrowText}>‹</Text>
-          </Pressable>
-          <Text style={[styles.monthTitle, { color: colors.text }]}>
-            {formatMonthLabel(month)}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Next month"
-            onPress={() => changeMonth(1)}
-            style={styles.monthArrow}
-          >
-            <Text style={styles.monthArrowText}>›</Text>
-          </Pressable>
-        </View>
+      {/* Smooth translucent overlay to ensure high contrast, readability, and theme compatibility */}
+      <View
+        style={[
+          styles.overlay,
+          {
+            backgroundColor: isDark
+              ? "rgba(10, 22, 33, 0.88)"
+              : "rgba(244, 248, 251, 0.78)",
+          },
+        ]}
+      />
 
-        <View
-          style={[
-            styles.calendarCard,
-            {
-              backgroundColor: colors.backgroundElement,
-              borderColor: colors.border,
-            },
-          ]}
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
         >
+          <Text style={[styles.eyebrow, { color: colors.accent }]}>
+            YOUR SCHEDULE
+          </Text>
+          <Text style={[styles.title, { color: colors.text }]}>Calendar</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            Keep your appointments organized in one place.
+          </Text>
+
+          <View style={styles.monthHeader}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Previous month"
+              onPress={() => changeMonth(-1)}
+              style={[
+                styles.monthArrow,
+                {
+                  backgroundColor: isDark
+                    ? "rgba(36, 56, 75, 0.9)"
+                    : "rgba(232, 242, 238, 0.9)",
+                },
+              ]}
+            >
+              <Text style={styles.monthArrowText}>‹</Text>
+            </Pressable>
+            <Text style={[styles.monthTitle, { color: colors.text }]}>
+              {formatMonthLabel(month)}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Next month"
+              onPress={() => changeMonth(1)}
+              style={[
+                styles.monthArrow,
+                {
+                  backgroundColor: isDark
+                    ? "rgba(36, 56, 75, 0.9)"
+                    : "rgba(232, 242, 238, 0.9)",
+                },
+              ]}
+            >
+              <Text style={styles.monthArrowText}>›</Text>
+            </Pressable>
+          </View>
+
+          <View
+            style={[
+              styles.calendarCard,
+              {
+                backgroundColor: isDark
+                  ? "rgba(23, 38, 54, 0.92)"
+                  : "rgba(255, 255, 255, 0.92)",
+                borderColor: isDark
+                  ? "rgba(255, 255, 255, 0.12)"
+                  : colors.border,
+              },
+            ]}
+          >
           <View style={styles.weekdayRow}>
             {["S", "M", "T", "W", "T", "F", "S"].map((weekday, index) => (
               <Text
@@ -464,7 +506,14 @@ export default function CalendarScreen() {
           <View
             style={[
               styles.emptyCard,
-              { backgroundColor: colors.backgroundElement },
+              {
+                backgroundColor: isDark
+                  ? "rgba(23, 38, 54, 0.92)"
+                  : "rgba(255, 255, 255, 0.92)",
+                borderColor: isDark
+                  ? "rgba(255, 255, 255, 0.12)"
+                  : colors.border,
+              },
             ]}
           >
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
@@ -497,7 +546,14 @@ export default function CalendarScreen() {
           <View
             style={[
               styles.emptyCard,
-              { backgroundColor: colors.backgroundElement },
+              {
+                backgroundColor: isDark
+                  ? "rgba(23, 38, 54, 0.92)"
+                  : "rgba(255, 255, 255, 0.92)",
+                borderColor: isDark
+                  ? "rgba(255, 255, 255, 0.12)"
+                  : colors.border,
+              },
             ]}
           >
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
@@ -520,8 +576,12 @@ export default function CalendarScreen() {
               style={[
                 styles.upcomingCard,
                 {
-                  backgroundColor: colors.backgroundElement,
-                  borderColor: colors.border,
+                  backgroundColor: isDark
+                    ? "rgba(23, 38, 54, 0.92)"
+                    : "rgba(255, 255, 255, 0.92)",
+                  borderColor: isDark
+                    ? "rgba(255, 255, 255, 0.12)"
+                    : colors.border,
                 },
               ]}
             >
@@ -572,6 +632,7 @@ export default function CalendarScreen() {
         />
       ) : null}
     </SafeAreaView>
+  </View>
   );
 }
 
@@ -587,14 +648,20 @@ function AppointmentCard({
   onDelete: () => void;
 }) {
   const colors = useTheme();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === "dark";
   const upcoming = isUpcoming(appointment, new Date());
   return (
     <View
       style={[
         styles.appointmentCard,
         {
-          backgroundColor: colors.backgroundElement,
-          borderColor: colors.border,
+          backgroundColor: isDark
+            ? "rgba(23, 38, 54, 0.92)"
+            : "rgba(255, 255, 255, 0.92)",
+          borderColor: isDark
+            ? "rgba(255, 255, 255, 0.12)"
+            : colors.border,
         },
       ]}
     >
@@ -869,9 +936,35 @@ function AppointmentEditor({
 }
 
 const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+    position: "relative",
+  },
+  backgroundImage: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: "100%",
+    height: "100%",
+  },
+  overlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: "100%",
+    height: "100%",
+  },
   safeArea: {
     flex: 1,
-    backgroundColor: "#F7FAF9",
+    backgroundColor: "transparent",
+  },
+  container: {
+    flex: 1,
+    backgroundColor: "transparent",
   },
   content: {
     padding: 20,

@@ -1071,7 +1071,7 @@ export async function scheduleWeeklyReviewNotification(
         data: {
           kind: "weekly-health-review",
           profileId,
-          url: "/ai/how-was-you",
+          url: "/home",
         },
       },
       trigger: {

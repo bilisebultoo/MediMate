@@ -187,7 +187,7 @@ async function performHealthReminderRefresh(
             kind: REMINDER_KIND,
             reminderId: record.id,
             userId: record.user_id,
-            url: "/health/health-reminders",
+            url: "/home",
           },
         },
         trigger: {

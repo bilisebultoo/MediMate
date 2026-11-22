@@ -57,11 +57,18 @@ function isPermissionGranted(
 async function ensureAndroidChannel() {
   if (!shouldUseMedicationChannel()) return;
 
-  await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-    name: "Medication reminders",
-    importance: Notifications.AndroidImportance.MAX,
-    vibrationPattern: [0, 250, 250, 250],
-  });
+  try {
+    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+      name: "Medication reminders",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      sound: "default",
+      enableVibrate: true,
+      showBadge: true,
+    });
+  } catch (error) {
+    console.warn("Could not configure medication notification channel:", error);
+  }
 }
 
 export async function requestMedicationDosePermissions(): Promise<boolean> {
@@ -193,6 +200,7 @@ async function performMedicationDoseRefresh(
           data: {
             kind: REMINDER_KIND,
             doseId: record.id,
+            url: "/home",
           },
         },
         trigger: {

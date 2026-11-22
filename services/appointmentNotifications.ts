@@ -41,11 +41,15 @@ function isPermissionGranted(
 
 async function ensureAndroidChannel() {
   if (!shouldUseAppointmentChannel()) return;
-  await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-    name: "Appointment reminders",
-    importance: Notifications.AndroidImportance.MAX,
-    vibrationPattern: [0, 250, 250, 250],
-  });
+  try {
+    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+      name: "Appointment reminders",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+    });
+  } catch (error) {
+    console.warn("Could not configure appointment notification channel:", error);
+  }
 }
 
 export function configureAppointmentNotifications() {
@@ -210,7 +214,7 @@ async function performAppointmentNotificationRefresh(
               kind: REMINDER_KIND,
               appointmentId: record.id,
               reminderType,
-              url: "/(tabs)/calendar",
+              url: "/home",
             },
           },
           trigger: {
