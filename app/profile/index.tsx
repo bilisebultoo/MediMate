@@ -1,6 +1,6 @@
+import { router } from "expo-router";
 import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useUserProfiles } from "@/context/UserContext";
@@ -8,8 +8,10 @@ import { useTheme } from "@/hooks/use-theme";
 
 function formatDateOfBirth(value: string | null): string {
   if (!value) return "Not set";
+
   const [year, month, day] = value.split("-").map(Number);
   const date = new Date(year, month - 1, day, 12);
+
   return Number.isNaN(date.getTime())
     ? value
     : date.toLocaleDateString(undefined, {
@@ -19,10 +21,33 @@ function formatDateOfBirth(value: string | null): string {
       });
 }
 
+function calculateAge(value: string | null): string {
+  if (!value) return "Not set";
+
+  const [year, month, day] = value.split("-").map(Number);
+
+  if (!year || !month || !day) return "Not set";
+
+  const today = new Date();
+  let age = today.getFullYear() - year;
+
+  if (
+    today.getMonth() + 1 < month ||
+    (today.getMonth() + 1 === month && today.getDate() < day)
+  ) {
+    age--;
+  }
+
+  return age >= 0 ? `${age} years old` : "Not set";
+}
+
 export default function ProfileScreen() {
   const { profiles, activeProfile, isLoading, loadError } = useUserProfiles();
   const colors = useTheme();
-  const selfProfile = profiles.find((profile) => profile.role === "self") ?? null;
+
+  const selfProfile =
+    profiles.find((profile) => profile.role === "self") ?? null;
+
   const initials = useMemo(
     () =>
       selfProfile?.name
@@ -64,6 +89,7 @@ export default function ProfileScreen() {
     >
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={[styles.title, { color: colors.text }]}>My Profile</Text>
+
         <View
           style={[
             styles.profileCard,
@@ -76,11 +102,13 @@ export default function ProfileScreen() {
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{initials}</Text>
           </View>
+
           <Text style={[styles.name, { color: colors.text }]}>
             {selfProfile.name}
           </Text>
+
           <Text style={[styles.role, { color: colors.textSecondary }]}>
-            Personal profile
+            Personal account owner
           </Text>
         </View>
 
@@ -94,14 +122,22 @@ export default function ProfileScreen() {
           ]}
         >
           <ProfileRow label="Email" value={selfProfile.email || "Not set"} />
+
           <ProfileRow label="Gender" value={selfProfile.gender || "Not set"} />
+
           <ProfileRow
             label="Date of birth"
             value={formatDateOfBirth(selfProfile.dateOfBirth)}
           />
+
+          <ProfileRow
+            label="Age"
+            value={calculateAge(selfProfile.dateOfBirth)}
+          />
+
           <ProfileRow
             label="Active profile"
-            value={activeProfile?.name ?? "Not set"}
+            value={activeProfile?.name ?? selfProfile.name}
           />
         </View>
 
@@ -114,19 +150,16 @@ export default function ProfileScreen() {
             })
           }
         />
+
         <ActionButton
           title="Manage dependents"
           onPress={() => router.push("/profile/dependents")}
           secondary
         />
+
         <ActionButton
-          title="Switch profile"
-          onPress={() => router.push("/(auth)/user-selection")}
-          secondary
-        />
-        <ActionButton
-          title="Switch User / Log In Screen"
-          onPress={() => router.push("/(auth)/login")}
+          title="Log Out"
+          onPress={() => router.replace("/(auth)/login")}
           secondary
         />
       </ScrollView>
@@ -136,11 +169,13 @@ export default function ProfileScreen() {
 
 function ProfileRow({ label, value }: { label: string; value: string }) {
   const colors = useTheme();
+
   return (
     <View style={styles.profileRow}>
       <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>
         {label}
       </Text>
+
       <Text style={[styles.rowValue, { color: colors.text }]}>{value}</Text>
     </View>
   );
@@ -156,6 +191,7 @@ function ActionButton({
   secondary?: boolean;
 }) {
   const colors = useTheme();
+
   return (
     <Pressable
       accessibilityRole="button"
