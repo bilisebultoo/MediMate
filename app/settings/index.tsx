@@ -41,11 +41,6 @@ const SETTINGS_OPTIONS = [
     path: "/settings/feedback",
   },
   {
-    title: "About MediMate",
-    description: "View app information and medical disclaimer",
-    path: "/settings/about",
-  },
-  {
     title: "Medical disclaimer",
     description: "Understand the limits of health information",
     path: "/settings/medical-disclaimer",
