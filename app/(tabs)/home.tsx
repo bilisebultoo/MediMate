@@ -1,6 +1,7 @@
 import { useUserProfiles } from "@/context/UserContext";
 import { useTheme } from "@/hooks/use-theme";
 import { getUpcomingAppointments } from "@/services/appointmentService";
+import { getHealthReminders } from "@/services/healthReminderService";
 import { refreshMedicationDoseNotifications } from "@/services/medicationDoseNotifications";
 import {
   markExpiredMedicationDoses,
@@ -8,6 +9,7 @@ import {
 } from "@/services/medicationDoseStatus";
 import { generateMedicationSchedules } from "@/services/medicationScheduleGenerator";
 import type { Appointment } from "@/types/appointment";
+import type { HealthReminder } from "@/types/healthReminder";
 import { router, useFocusEffect } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
@@ -82,6 +84,24 @@ function formatScheduledTime(time: string): string {
   return `${hour}:${String(minuteValue).padStart(2, "0")} ${suffix}`;
 }
 
+const HEALTH_METRIC_LABELS: Record<string, { name: string; icon: string }> = {
+  blood_pressure: { name: "Blood Pressure", icon: "🩺" },
+  heart_rate: { name: "Heart Rate", icon: "❤️" },
+  blood_sugar: { name: "Blood Sugar", icon: "🩸" },
+  weight: { name: "Weight", icon: "⚖️" },
+  temperature: { name: "Temperature", icon: "🌡️" },
+};
+
+function formatReminderTime(timeStr: string): string {
+  const [hStr, mStr] = timeStr.split(":");
+  const h = Number(hStr);
+  const m = Number(mStr);
+  if (Number.isNaN(h) || Number.isNaN(m)) return timeStr;
+  const suffix = h >= 12 ? "PM" : "AM";
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2, "0")} ${suffix}`;
+}
+
 export default function HomeScreen() {
   const database = useSQLiteContext();
   const { activeProfile } = useUserProfiles();
@@ -90,6 +110,7 @@ export default function HomeScreen() {
   const [doses, setDoses] = useState<HomeDose[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [appointmentLoadError, setAppointmentLoadError] = useState(false);
+  const [healthReminders, setHealthReminders] = useState<HealthReminder[]>([]);
   const [totalMedicines, setTotalMedicines] = useState(0);
   const [savingDoseId, setSavingDoseId] = useState<number | null>(null);
 
@@ -118,6 +139,15 @@ export default function HomeScreen() {
         if (isCurrent()) {
           setAppointmentLoadError(true);
         }
+      }
+
+      try {
+        const reminders = await getHealthReminders(database, userId);
+        if (isCurrent()) {
+          setHealthReminders(reminders.filter((r) => r.enabled));
+        }
+      } catch (error) {
+        console.error("Error loading health reminders:", error);
       }
 
       try {
@@ -486,28 +516,101 @@ export default function HomeScreen() {
           )}
 
           {/* Health Reminders */}
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Health Reminders
-          </Text>
-
           <View
-            style={[
-              styles.emptyCard,
-              { backgroundColor: colors.backgroundElement },
-            ]}
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginTop: 12,
+              marginBottom: 14,
+            }}
           >
-            <Text style={styles.emptyIcon}>❤️</Text>
-
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              Stay on top of your health
+            <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 0, marginBottom: 0 }]}>
+              Health Reminders
             </Text>
-
-            <Text
-              style={[styles.emptyDescription, { color: colors.textSecondary }]}
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push("/health/health-reminders")}
             >
-              Your health tracking reminders will appear here.
-            </Text>
+              <Text style={{ fontSize: 13, fontWeight: "600", color: colors.accent }}>
+                Manage
+              </Text>
+            </Pressable>
           </View>
+
+          {healthReminders.length === 0 ? (
+            <View
+              style={[
+                styles.emptyCard,
+                { backgroundColor: colors.backgroundElement },
+              ]}
+            >
+              <Text style={styles.emptyIcon}>❤️</Text>
+
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                Stay on top of your health
+              </Text>
+
+              <Text
+                style={[styles.emptyDescription, { color: colors.textSecondary }]}
+              >
+                Your health tracking reminders will appear here.
+              </Text>
+            </View>
+          ) : (
+            healthReminders.map((reminder) => {
+              const metricInfo = HEALTH_METRIC_LABELS[reminder.metric] ?? {
+                name: reminder.label || "Health measurement",
+                icon: "❤️",
+              };
+              const title =
+                reminder.metric === "custom"
+                  ? reminder.label || "Health measurement"
+                  : metricInfo.name;
+
+              const repeatText =
+                reminder.repeatType === "once"
+                  ? `Once · ${reminder.startDate}`
+                  : "Weekly";
+
+              return (
+                <View
+                  key={reminder.id}
+                  style={[
+                    styles.appointmentCard,
+                    {
+                      backgroundColor: colors.backgroundElement,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <View style={styles.appointmentDate}>
+                    <Text style={{ fontSize: 22 }}>{metricInfo.icon}</Text>
+                  </View>
+
+                  <View style={styles.appointmentInfo}>
+                    <Text
+                      style={[styles.appointmentName, { color: colors.text }]}
+                      numberOfLines={1}
+                    >
+                      {title}
+                    </Text>
+
+                    <Text
+                      style={[
+                        styles.appointmentDetails,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      {repeatText}
+                      {" · "}
+                      {formatReminderTime(reminder.scheduledTime)}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })
+          )}
 
           {/* Footer */}
           <Text style={[styles.footer, { color: colors.textSecondary }]}>
