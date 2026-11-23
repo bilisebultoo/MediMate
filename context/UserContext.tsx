@@ -1,3 +1,4 @@
+import { useSQLiteContext } from "expo-sqlite";
 import {
   createContext,
   useCallback,
@@ -6,14 +7,13 @@ import {
   useMemo,
   useState,
   type PropsWithChildren,
-} from 'react';
-import { useSQLiteContext } from 'expo-sqlite';
+} from "react";
 
-import type { User } from '@/types/user';
+import type { User } from "@/types/user";
 
 export type ProfileInput = Pick<
   User,
-  'name' | 'email' | 'gender' | 'dateOfBirth'
+  "name" | "email" | "gender" | "dateOfBirth"
 >;
 
 type ActiveProfileRecord = {
@@ -37,7 +37,7 @@ export const UserContext = createContext<UserContextValue | null>(null);
 export function useUserProfiles(): UserContextValue {
   const context = useContext(UserContext);
   if (!context) {
-    throw new Error('useUserProfiles must be used within a UserProvider.');
+    throw new Error("useUserProfiles must be used within a UserProvider.");
   }
   return context;
 }
@@ -72,7 +72,7 @@ export function UserProvider({ children }: PropsWithChildren) {
       ]);
       const selectedId =
         activeRecord?.profile_id ??
-        profileRecords.find((profile) => profile.role === 'self')?.id ??
+        profileRecords.find((profile) => profile.role === "self")?.id ??
         null;
       setProfiles(profileRecords);
       setActiveProfileId(selectedId);
@@ -84,8 +84,8 @@ export function UserProvider({ children }: PropsWithChildren) {
         );
       }
     } catch (error) {
-      console.error('Error loading profiles:', error);
-      setLoadError('Profiles could not be loaded.');
+      console.error("Error loading profiles:", error);
+      setLoadError("Profiles could not be loaded.");
       throw error;
     } finally {
       setIsLoading(false);
@@ -94,7 +94,7 @@ export function UserProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     void refreshProfiles().catch((error: unknown) => {
-      console.error('Could not initialize profiles:', error);
+      console.error("Could not initialize profiles:", error);
     });
   }, [refreshProfiles]);
 
@@ -124,7 +124,7 @@ export function UserProvider({ children }: PropsWithChildren) {
         profileId,
       );
       if (result.changes !== 1) {
-        throw new Error('The profile could not be found.');
+        throw new Error("The profile could not be found.");
       }
       await refreshProfiles();
     },
@@ -156,8 +156,8 @@ export function UserProvider({ children }: PropsWithChildren) {
           "SELECT role FROM profiles WHERE id = ?",
           profileId,
         );
-        if (!dependent || dependent.role !== 'dependent') {
-          throw new Error('Only dependent profiles can be removed.');
+        if (!dependent || dependent.role !== "dependent") {
+          throw new Error("Only dependent profiles can be removed.");
         }
 
         const activeRecord = await database.getFirstAsync<ActiveProfileRecord>(
@@ -168,7 +168,7 @@ export function UserProvider({ children }: PropsWithChildren) {
             "SELECT id FROM profiles WHERE role = 'self' LIMIT 1",
           );
           if (!selfProfile) {
-            throw new Error('The owner profile could not be found.');
+            throw new Error("The owner profile could not be found.");
           }
           await database.runAsync(
             "UPDATE active_profile SET profile_id = ? WHERE singleton_id = 1",
@@ -177,26 +177,26 @@ export function UserProvider({ children }: PropsWithChildren) {
         }
 
         await database.runAsync(
-          'DELETE FROM medication_history WHERE user_id = ?',
+          "DELETE FROM medication_history WHERE user_id = ?",
           profileId,
         );
         await database.runAsync(
-          'DELETE FROM medicines WHERE user_id = ?',
+          "DELETE FROM medicines WHERE user_id = ?",
           profileId,
         );
         await database.runAsync(
-          'DELETE FROM health_records WHERE user_id = ?',
+          "DELETE FROM health_records WHERE user_id = ?",
           profileId,
         );
         await database.runAsync(
-          'DELETE FROM appointments WHERE user_id = ?',
+          "DELETE FROM appointments WHERE user_id = ?",
           profileId,
         );
         await database.runAsync(
-          'DELETE FROM meal_settings WHERE user_id = ?',
+          "DELETE FROM meal_settings WHERE user_id = ?",
           profileId,
         );
-        await database.runAsync('DELETE FROM profiles WHERE id = ?', profileId);
+        await database.runAsync("DELETE FROM profiles WHERE id = ?", profileId);
       });
       await refreshProfiles();
     },

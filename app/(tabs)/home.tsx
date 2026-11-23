@@ -1,37 +1,34 @@
-import { useCallback, useState } from "react";
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  View,
-  useColorScheme,
-} from "react-native";
-import { router, useFocusEffect } from "expo-router";
-import { useSQLiteContext } from "expo-sqlite";
-import { SafeAreaView } from "react-native-safe-area-context";
-
-import { generateMedicationSchedules } from "@/services/medicationScheduleGenerator";
-import {
-  refreshMedicationDoseNotifications,
-} from "@/services/medicationDoseNotifications";
+import { useUserProfiles } from "@/context/UserContext";
+import { useTheme } from "@/hooks/use-theme";
+import { getUpcomingAppointments } from "@/services/appointmentService";
+import { refreshMedicationDoseNotifications } from "@/services/medicationDoseNotifications";
 import {
   markExpiredMedicationDoses,
   markMedicationDoseTaken,
 } from "@/services/medicationDoseStatus";
-import { getUpcomingAppointments } from "@/services/appointmentService";
+import { generateMedicationSchedules } from "@/services/medicationScheduleGenerator";
 import type { Appointment } from "@/types/appointment";
-import { useUserProfiles } from "@/context/UserContext";
-import { useTheme } from "@/hooks/use-theme";
+import { router, useFocusEffect } from "expo-router";
+import { useSQLiteContext } from "expo-sqlite";
+import { StatusBar } from "expo-status-bar";
+import { useCallback, useState } from "react";
+import {
+  Alert,
+  ImageBackground,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type HomeDose = {
   id: number;
   name: string;
   dose: string;
   scheduled_time: string;
-  status: "PENDING" | "TAKEN" | "SKIPPED" | "MISSED";
+  status: "PENDING" | "TAKEN" | "MISSED";
 };
 
 type MedicineCount = {
@@ -67,6 +64,7 @@ function formatAppointmentTime(date: Date): string {
 
 function formatScheduledTime(time: string): string {
   const [hourValue, minuteValue] = time.split(":").map(Number);
+
   if (
     !Number.isInteger(hourValue) ||
     !Number.isInteger(minuteValue) ||
@@ -80,6 +78,7 @@ function formatScheduledTime(time: string): string {
 
   const suffix = hourValue >= 12 ? "PM" : "AM";
   const hour = hourValue % 12 || 12;
+
   return `${hour}:${String(minuteValue).padStart(2, "0")} ${suffix}`;
 }
 
@@ -87,7 +86,7 @@ export default function HomeScreen() {
   const database = useSQLiteContext();
   const { activeProfile } = useUserProfiles();
   const colors = useTheme();
-  const colorScheme = useColorScheme();
+
   const [doses, setDoses] = useState<HomeDose[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [appointmentLoadError, setAppointmentLoadError] = useState(false);
@@ -97,8 +96,10 @@ export default function HomeScreen() {
   const loadDashboard = useCallback(
     async (ensureSchedules: boolean, isCurrent: () => boolean) => {
       if (!activeProfile) return;
+
       const userId = activeProfile.id;
       const now = new Date();
+
       try {
         const upcomingAppointments = await getUpcomingAppointments(
           database,
@@ -106,13 +107,17 @@ export default function HomeScreen() {
           formatLocalDate(now),
           formatLocalTime(now),
         );
+
         if (isCurrent()) {
           setAppointments(upcomingAppointments);
           setAppointmentLoadError(false);
         }
       } catch (error) {
         console.error("Error loading upcoming appointments:", error);
-        if (isCurrent()) setAppointmentLoadError(true);
+
+        if (isCurrent()) {
+          setAppointmentLoadError(true);
+        }
       }
 
       try {
@@ -121,6 +126,7 @@ export default function HomeScreen() {
         }
 
         const expiredCount = await markExpiredMedicationDoses(database);
+
         if (expiredCount > 0) {
           try {
             await refreshMedicationDoseNotifications(database);
@@ -133,6 +139,7 @@ export default function HomeScreen() {
         }
 
         const today = formatLocalDate(now);
+
         const [todayDoses, medicineCount] = await Promise.all([
           database.getAllAsync<HomeDose>(
             `SELECT h.id, m.name, m.dose, h.scheduled_time, h.status
@@ -143,6 +150,7 @@ export default function HomeScreen() {
             userId,
             today,
           ),
+
           database.getFirstAsync<MedicineCount>(
             "SELECT COUNT(*) AS count FROM medicines WHERE user_id = ?",
             userId,
@@ -163,11 +171,13 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       let isCurrent = true;
+
       const refresh = (ensureSchedules = false) => {
         void loadDashboard(ensureSchedules, () => isCurrent);
       };
 
       refresh(true);
+
       const interval = setInterval(() => refresh(), 15_000);
 
       return () => {
@@ -181,12 +191,14 @@ export default function HomeScreen() {
     if (savingDoseId !== null || !activeProfile) return;
 
     setSavingDoseId(doseId);
+
     try {
       const confirmed = await markMedicationDoseTaken(
         database,
         doseId,
         activeProfile.id,
       );
+
       await loadDashboard(false, () => true);
 
       if (!confirmed) {
@@ -200,7 +212,11 @@ export default function HomeScreen() {
       try {
         await refreshMedicationDoseNotifications(database);
       } catch (error) {
-        console.error("Error refreshing reminders after confirming a dose:", error);
+        console.error(
+          "Error refreshing reminders after confirming a dose:",
+          error,
+        );
+
         Alert.alert(
           "Dose saved, reminders not refreshed",
           "The dose was marked as taken, but upcoming reminders could not be refreshed.",
@@ -208,6 +224,7 @@ export default function HomeScreen() {
       }
     } catch (error) {
       console.error("Error confirming medication dose:", error);
+
       Alert.alert(
         "Could not confirm dose",
         "Please try again. The dose will remain pending until it is confirmed.",
@@ -218,254 +235,297 @@ export default function HomeScreen() {
   };
 
   const today = new Date();
+
   const dateText = today.toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
     year: "numeric",
   });
+
   const hour = today.getHours();
+
   const greeting =
     hour < 12
       ? "Good morning!"
       : hour < 17
         ? "Good afternoon!"
         : "Good evening!";
+
   const userFirstName = activeProfile?.name
     ? activeProfile.name.trim().split(/\s+/)[0]
     : "";
+
   const takenDoses = doses.filter((dose) => dose.status === "TAKEN");
   const pendingDoses = doses.filter((dose) => dose.status === "PENDING");
   const missedDoses = doses.filter((dose) => dose.status === "MISSED");
 
   return (
-    <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: colors.background }]}
+    <ImageBackground
+      source={require("../../assets/images/medicines-background.jpg")}
+      style={styles.backgroundImage}
+      resizeMode="cover"
     >
-      <StatusBar
-        barStyle={colorScheme === "dark" ? "light-content" : "dark-content"}
-      />
+      {/* Expo StatusBar: translucent prop removed */}
+      <StatusBar style="dark" />
 
-      <ScrollView
-        style={[styles.container, { backgroundColor: colors.background }]}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
+      <SafeAreaView
+        style={styles.safeArea}
+        edges={["top", "left", "right", "bottom"]}
       >
-        <View style={styles.header}>
-          <View>
-            <Text style={[styles.greeting, { color: colors.text }]}>
-              {greeting}
-            </Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              {userFirstName ? `Welcome, ${userFirstName}` : "Welcome to MediMate"}
-            </Text>
-            <Text style={[styles.date, { color: colors.textSecondary }]}>
-              {dateText}
-            </Text>
+        <ScrollView
+          style={styles.container}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+        >
+          {/* Home Screen Header */}
+          <View style={styles.header}>
+            <View>
+              <Text style={[styles.greeting, { color: colors.text }]}>
+                {greeting}
+              </Text>
+
+              <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                {userFirstName
+                  ? `Welcome, ${userFirstName}`
+                  : "Welcome to MediMate"}
+              </Text>
+
+              <Text style={[styles.date, { color: colors.textSecondary }]}>
+                {dateText}
+              </Text>
+            </View>
+
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {userFirstName ? userFirstName.charAt(0).toUpperCase() : "U"}
+              </Text>
+            </View>
           </View>
 
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {userFirstName ? userFirstName.charAt(0).toUpperCase() : "U"}
-            </Text>
-          </View>
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          Today&apos;s Overview
-        </Text>
-
-        <View style={styles.statsGrid}>
-          <StatCard
-            title="Total Medicines"
-            value={String(totalMedicines)}
-            icon="💊"
-            background="#E8F5EE"
-            color="#287A58"
-          />
-          <StatCard
-            title="Taken Doses"
-            value={String(takenDoses.length)}
-            icon="✓"
-            background="#EAF0FF"
-            color="#4566B2"
-          />
-          <StatCard
-            title="Pending Doses"
-            value={String(pendingDoses.length)}
-            icon="⏰"
-            background="#FFF4E5"
-            color="#B77924"
-          />
-          <StatCard
-            title="Missed Doses"
-            value={String(missedDoses.length)}
-            icon="!"
-            background="#FCECEC"
-            color="#C05252"
-          />
-        </View>
-
-        <View style={styles.sectionHeader}>
+          {/* Today's Overview */}
           <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Today&apos;s Doses
+            Today&apos;s Overview
           </Text>
-          <Text style={[styles.viewAll, { color: colors.textSecondary }]}>
-            {doses.length} doses
-          </Text>
-        </View>
 
-        <DoseSection
-          title="Pending Doses"
-          doses={pendingDoses}
-          emptyMessage="No pending doses for today."
-          onConfirmTaken={handleConfirmTaken}
-          savingDoseId={savingDoseId}
-        />
-        <DoseSection
-          title="Taken Doses"
-          doses={takenDoses}
-          emptyMessage="No doses confirmed yet."
-        />
-        <DoseSection
-          title="Missed Doses"
-          doses={missedDoses}
-          emptyMessage="No missed doses today."
-        />
+          <View style={styles.statsGrid}>
+            <StatCard
+              title="Total Medicines"
+              value={String(totalMedicines)}
+              icon="💊"
+              background="#E8F5EE"
+              color="#287A58"
+            />
 
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          Upcoming Appointments
-        </Text>
-        {appointmentLoadError ? (
-          <View
-            style={[
-              styles.emptyCard,
-              { backgroundColor: colors.backgroundElement },
-            ]}
-          >
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              Upcoming appointments could not be loaded
+            <StatCard
+              title="Taken Doses"
+              value={String(takenDoses.length)}
+              icon="✓"
+              background="#EAF0FF"
+              color="#4566B2"
+            />
+
+            <StatCard
+              title="Pending Doses"
+              value={String(pendingDoses.length)}
+              icon="⏰"
+              background="#FFF4E5"
+              color="#B77924"
+            />
+
+            <StatCard
+              title="Missed Doses"
+              value={String(missedDoses.length)}
+              icon="!"
+              background="#FCECEC"
+              color="#C05252"
+            />
+          </View>
+
+          {/* Today's Doses */}
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Today&apos;s Doses
             </Text>
-            <Text
-              style={[styles.emptyDescription, { color: colors.textSecondary }]}
-            >
-              Please try again in a moment.
+
+            <Text style={[styles.viewAll, { color: colors.textSecondary }]}>
+              {doses.length} doses
             </Text>
           </View>
-        ) : appointments.length === 0 ? (
-          <View
-            style={[
-              styles.emptyCard,
-              { backgroundColor: colors.backgroundElement },
-            ]}
-          >
-            <Text style={styles.emptyIcon}>📅</Text>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              No upcoming appointments
-            </Text>
-            <Text
-              style={[styles.emptyDescription, { color: colors.textSecondary }]}
+
+          <DoseSection
+            title="Pending Doses"
+            doses={pendingDoses}
+            emptyMessage="No pending doses for today."
+            onConfirmTaken={handleConfirmTaken}
+            savingDoseId={savingDoseId}
+          />
+
+          <DoseSection
+            title="Taken Doses"
+            doses={takenDoses}
+            emptyMessage="No doses confirmed yet."
+          />
+
+          <DoseSection
+            title="Missed Doses"
+            doses={missedDoses}
+            emptyMessage="No missed doses today."
+          />
+
+          {/* Upcoming Appointments */}
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Upcoming Appointments
+          </Text>
+
+          {appointmentLoadError ? (
+            <View
+              style={[
+                styles.emptyCard,
+                { backgroundColor: colors.backgroundElement },
+              ]}
             >
-              Your doctor and hospital appointments will appear here.
-            </Text>
-          </View>
-        ) : (
-          appointments.map((appointment) => {
-            const date = parseAppointmentDate(appointment);
-            return (
-              <View
-                key={appointment.id}
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                Upcoming appointments could not be loaded
+              </Text>
+
+              <Text
                 style={[
-                  styles.appointmentCard,
-                  {
-                    backgroundColor: colors.backgroundElement,
-                    borderColor: colors.border,
-                  },
+                  styles.emptyDescription,
+                  { color: colors.textSecondary },
                 ]}
               >
-                <View style={styles.appointmentDate}>
-                  <Text style={styles.appointmentMonth}>
-                    {date.toLocaleDateString(undefined, { month: "short" })}
-                  </Text>
-                  <Text style={styles.appointmentDay}>
-                    {date.getDate()}
-                  </Text>
-                </View>
-                <View style={styles.appointmentInfo}>
-                  <Text
-                    style={[
-                      styles.appointmentName,
-                      { color: colors.text },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {appointment.title}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.appointmentDetails,
-                      { color: colors.textSecondary },
-                    ]}
-                  >
-                    {date.toLocaleDateString(undefined, {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                    })}
-                    {" · "}
-                    {formatAppointmentTime(date)}
-                  </Text>
-                  {appointment.location ? (
+                Please try again in a moment.
+              </Text>
+            </View>
+          ) : appointments.length === 0 ? (
+            <View
+              style={[
+                styles.emptyCard,
+                { backgroundColor: colors.backgroundElement },
+              ]}
+            >
+              <Text style={styles.emptyIcon}>📅</Text>
+
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                No upcoming appointments
+              </Text>
+
+              <Text
+                style={[
+                  styles.emptyDescription,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Your doctor and hospital appointments will appear here.
+              </Text>
+            </View>
+          ) : (
+            appointments.map((appointment) => {
+              const date = parseAppointmentDate(appointment);
+
+              return (
+                <View
+                  key={appointment.id}
+                  style={[
+                    styles.appointmentCard,
+                    {
+                      backgroundColor: colors.backgroundElement,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <View style={styles.appointmentDate}>
+                    <Text style={styles.appointmentMonth}>
+                      {date.toLocaleDateString(undefined, {
+                        month: "short",
+                      })}
+                    </Text>
+
+                    <Text style={styles.appointmentDay}>{date.getDate()}</Text>
+                  </View>
+
+                  <View style={styles.appointmentInfo}>
+                    <Text
+                      style={[styles.appointmentName, { color: colors.text }]}
+                      numberOfLines={1}
+                    >
+                      {appointment.title}
+                    </Text>
+
                     <Text
                       style={[
                         styles.appointmentDetails,
                         { color: colors.textSecondary },
                       ]}
-                      numberOfLines={1}
                     >
-                      {appointment.location}
+                      {date.toLocaleDateString(undefined, {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                      {" · "}
+                      {formatAppointmentTime(date)}
                     </Text>
-                  ) : null}
+
+                    {appointment.location ? (
+                      <Text
+                        style={[
+                          styles.appointmentDetails,
+                          { color: colors.textSecondary },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {appointment.location}
+                      </Text>
+                    ) : null}
+                  </View>
                 </View>
-              </View>
-            );
-          })
-        )}
+              );
+            })
+          )}
 
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          Health Reminders
-        </Text>
-        <View
-          style={[
-            styles.emptyCard,
-            { backgroundColor: colors.backgroundElement },
-          ]}
-        >
-          <Text style={styles.emptyIcon}>❤️</Text>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            Stay on top of your health
+          {/* Health Reminders */}
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Health Reminders
           </Text>
-          <Text
-            style={[styles.emptyDescription, { color: colors.textSecondary }]}
+
+          <View
+            style={[
+              styles.emptyCard,
+              { backgroundColor: colors.backgroundElement },
+            ]}
           >
-            Your health tracking reminders will appear here.
+            <Text style={styles.emptyIcon}>❤️</Text>
+
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>
+              Stay on top of your health
+            </Text>
+
+            <Text
+              style={[styles.emptyDescription, { color: colors.textSecondary }]}
+            >
+              Your health tracking reminders will appear here.
+            </Text>
+          </View>
+
+          {/* Footer */}
+          <Text style={[styles.footer, { color: colors.textSecondary }]}>
+            MediMate • Where Your health is organized.
           </Text>
-        </View>
+        </ScrollView>
 
-        <Text style={[styles.footer, { color: colors.textSecondary }]}>
-          MediMate • Where Your health is organized.
-        </Text>
-      </ScrollView>
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Open MediMate AI"
-        onPress={() => router.push("/ai")}
-        style={[styles.aiButton, { backgroundColor: colors.accent }]}
-      >
-        <Text style={styles.aiButtonText}>✦</Text>
-      </Pressable>
-    </SafeAreaView>
+        {/* MediMate AI Button */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open MediMate AI"
+          onPress={() => router.push("/ai")}
+          style={[styles.aiButton, { backgroundColor: colors.accent }]}
+        >
+          <Text style={styles.aiButtonText}>✦</Text>
+        </Pressable>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
@@ -483,6 +543,7 @@ function StatCard({
   color: string;
 }) {
   const colors = useTheme();
+
   return (
     <View style={[styles.statCard, { backgroundColor: background }]}>
       <Text style={styles.statIcon}>{icon}</Text>
@@ -506,11 +567,13 @@ function DoseSection({
   savingDoseId?: number | null;
 }) {
   const colors = useTheme();
+
   return (
     <View style={styles.doseSection}>
       <Text style={[styles.doseSectionTitle, { color: colors.text }]}>
         {title}
       </Text>
+
       {doses.length === 0 ? (
         <View
           style={[
@@ -540,19 +603,19 @@ function DoseSection({
               <View style={styles.medicineIconContainer}>
                 <Text style={styles.medicineIcon}>💊</Text>
               </View>
+
               <View style={styles.medicineInfo}>
                 <Text style={[styles.medicineName, { color: colors.text }]}>
                   {dose.name}
                 </Text>
+
                 <Text
-                  style={[
-                    styles.medicineDose,
-                    { color: colors.textSecondary },
-                  ]}
+                  style={[styles.medicineDose, { color: colors.textSecondary }]}
                 >
                   {dose.dose} · {formatScheduledTime(dose.scheduled_time)}
                 </Text>
               </View>
+
               {onConfirmTaken ? (
                 <Pressable
                   accessibilityRole="button"
@@ -604,10 +667,14 @@ function DoseSection({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#F7FAF9",
+    backgroundColor: "transparent",
+  },
+  backgroundImage: {
+    flex: 1,
   },
   container: {
     flex: 1,
+    backgroundColor: "transparent",
   },
   content: {
     padding: 20,
