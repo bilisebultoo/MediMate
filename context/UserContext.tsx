@@ -65,26 +65,35 @@ export function UserProvider({ children }: PropsWithChildren) {
     setLoadError(null);
 
     try {
-      const profileRecords = await database.getAllAsync<User>(
-        `SELECT id, name, email, gender,
-                date_of_birth AS dateOfBirth, role
-         FROM profiles
-         ORDER BY CASE role WHEN 'self' THEN 0 ELSE 1 END, name COLLATE NOCASE`,
-      );
+      const [profileRecords, activeRecord] = await Promise.all([
+        database.getAllAsync<User>(
+          `SELECT id, name, email, gender,
+                  date_of_birth AS dateOfBirth, role
+           FROM profiles
+           ORDER BY CASE role WHEN 'self' THEN 0 ELSE 1 END, name COLLATE NOCASE`,
+        ),
+        database.getFirstAsync<ActiveProfileRecord>(
+          "SELECT profile_id FROM active_profile WHERE singleton_id = 1",
+        ),
+      ]);
 
       const selfProfile =
         profileRecords.find((profile) => profile.role === "self") ?? null;
 
-      setProfiles(profileRecords);
-      setActiveProfileId(selfProfile?.id ?? null);
+      const currentActive =
+        profileRecords.find((p) => p.id === activeRecord?.profile_id) ??
+        selfProfile;
 
-      if (selfProfile) {
+      setProfiles(profileRecords);
+      setActiveProfileId(currentActive?.id ?? null);
+
+      if (currentActive && (!activeRecord || activeRecord.profile_id !== currentActive.id)) {
         await database.runAsync(
           `INSERT INTO active_profile (singleton_id, profile_id)
            VALUES (1, ?)
            ON CONFLICT(singleton_id)
            DO UPDATE SET profile_id = excluded.profile_id`,
-          selfProfile.id,
+          currentActive.id,
         );
       }
     } catch (error) {
@@ -156,14 +165,12 @@ export function UserProvider({ children }: PropsWithChildren) {
            LIMIT 1`,
         );
 
-        if (existingSelf) {
-          const isEmptyDefault =
-            (existingSelf.id === "default" ||
-              existingSelf.name.trim() === "My Profile") &&
-            !existingSelf.email &&
-            !existingSelf.gender &&
-            !existingSelf.dateOfBirth;
+        const isUnusedDefault =
+          existingSelf &&
+          existingSelf.id === "default" &&
+          (!existingSelf.email && !existingSelf.gender && !existingSelf.dateOfBirth);
 
+        if (isUnusedDefault) {
           targetProfileId = existingSelf.id;
 
           await database.runAsync(
